@@ -100,8 +100,8 @@ module Gist
 
   def execute(*args)
     private_gist = defaults["private"]
-    gist_filename = nil
-    gist_extension = defaults["extension"]
+    gist_filename = []
+    gist_extension = [defaults["extension"]]
 
     opts = OptionParser.new do |opts|
       opts.banner = "Usage: gist [options] [filename or stdin]"
@@ -112,7 +112,7 @@ module Gist
 
       t_desc = 'Set syntax highlighting of the Gist by file extension'
       opts.on('-t', '--type [EXTENSION]', t_desc) do |extension|
-        gist_extension = '.' + extension
+        gist_extension = ['.' + extension]
       end
 
       opts.on('-m', '--man', 'Print manual') do
@@ -133,22 +133,27 @@ module Gist
     opts.parse!(args)
 
     begin
+      input = []  
+      
       if $stdin.tty?
 
         if args.empty?
           puts opts
           exit
         end
-
-        if File.exists?(file = args[0])
-          input = File.read(file)
-          gist_filename = file
-          gist_extension = File.extname(file) if file.include?('.')
-        else
-          abort "Can't find #{file}"
+        
+        gist_extension = []
+        args.each do |file|
+          if File.exists?(file)
+            input << File.read(file)
+            gist_filename << file
+            gist_extension << File.extname(file) if file.include?('.')
+          else
+            abort "Can't find #{file}"
+          end
         end
       else
-        input = $stdin.read
+        input << $stdin.read
       end
 
       url = write(input, private_gist, gist_extension, gist_filename)
@@ -160,7 +165,7 @@ module Gist
     end
   end
 
-  def write(content, private_gist = false, gist_extension = nil, gist_filename = nil)
+  def write(content, private_gist = false, gist_extension = [], gist_filename = [])
     url = URI.parse(CREATE_URL)
 
     proxy = Net::HTTP::Proxy(PROXY_HOST, PROXY_PORT)
@@ -202,11 +207,15 @@ module Gist
 
 private
   def data(name, ext, content, private_gist)
-    return {
-      'file_ext[gistfile1]'      => ext ? ext : '.txt',
-      'file_name[gistfile1]'     => name,
-      'file_contents[gistfile1]' => content
-    }.merge(private_gist ? { 'action_button' => 'private' } : {}).merge(auth)
+    result = {}
+    content.each_with_index do |cont, i|
+      result.merge!({
+        "file_ext[gistfile#{i+1}]"      => ext[i] ? ext[i] : '.txt',
+        "file_name[gistfile#{i+1}]"     => name[i],
+        "file_contents[gistfile#{i+1}]" => cont
+      })
+    end
+    result.merge(private_gist ? { 'action_button' => 'private' } : {}).merge(auth)
   end
 
   def auth

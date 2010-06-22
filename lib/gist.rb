@@ -33,8 +33,8 @@ module Gist
   # Parses command line arguments and does what needs to be done.
   def execute(*args)
     private_gist = defaults["private"]
-    gist_filename = nil
-    gist_extension = defaults["extension"]
+    gist_filename = []
+    gist_extension = [defaults["extension"]]
 
     opts = OptionParser.new do |opts|
       opts.banner = "Usage: gist [options] [filename or stdin]"
@@ -45,7 +45,7 @@ module Gist
 
       t_desc = 'Set syntax highlighting of the Gist by file extension'
       opts.on('-t', '--type [EXTENSION]', t_desc) do |extension|
-        gist_extension = '.' + extension
+        gist_extension = ['.' + extension]
       end
 
       opts.on('-m', '--man', 'Print manual') do
@@ -66,6 +66,8 @@ module Gist
     opts.parse!(args)
 
     begin
+      input = []  
+      
       if $stdin.tty?
         # Run without stdin.
 
@@ -74,18 +76,22 @@ module Gist
           puts opts
           exit
         end
-
+        
+        # Grab file extensions from filename
+        gist_extension = []
         # Check if arg is a file. If so, grab the content.
-        if File.exists?(file = args[0])
-          input = File.read(file)
-          gist_filename = file
-          gist_extension = File.extname(file) if file.include?('.')
-        else
-          abort "Can't find #{file}"
+        args.each do |file|
+          if File.exists?(file)
+            input << File.read(file)
+            gist_filename << file
+            gist_extension << File.extname(file) if file.include?('.')
+          else
+            abort "Can't find #{file}"
+          end
         end
       else
         # Read from standard input.
-        input = $stdin.read
+        input << $stdin.read
       end
 
       url = write(input, private_gist, gist_extension, gist_filename)
@@ -98,7 +104,7 @@ module Gist
   end
 
   # Create a gist on gist.github.com
-  def write(content, private_gist = false, gist_extension = nil, gist_filename = nil)
+  def write(content, private_gist = false, gist_extension = [], gist_filename = [])
     url = URI.parse(CREATE_URL)
 
     # Net::HTTP::Proxy returns Net::HTTP if PROXY_HOST is nil
@@ -125,7 +131,7 @@ module Gist
     end
   end
 
-  # Tries to copy passed content to the clipboard.
+  # Tries to copy pssed content to the clipboard.
   def copy(content)
     cmd = case true
     when system("type pbcopy > /dev/null 2>&1")
@@ -147,11 +153,15 @@ private
   # Give a file name, extension, content, and private boolean, returns
   # an appropriate payload for POSTing to gist.github.com
   def data(name, ext, content, private_gist)
-    return {
-      'file_ext[gistfile1]'      => ext ? ext : '.txt',
-      'file_name[gistfile1]'     => name,
-      'file_contents[gistfile1]' => content
-    }.merge(private_gist ? { 'action_button' => 'private' } : {}).merge(auth)
+    result = {}
+    content.each_with_index do |cont, i|
+      result.merge!({
+        "file_ext[gistfile#{i+1}]"      => ext[i] ? ext[i] : '.txt',
+        "file_name[gistfile#{i+1}]"     => name[i],
+        "file_contents[gistfile#{i+1}]" => cont
+      })
+    end
+    result.merge(private_gist ? { 'action_button' => 'private' } : {}).merge(auth)
   end
 
   # Returns a hash of the user's GitHub credentials if set.
